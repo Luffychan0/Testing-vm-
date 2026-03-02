@@ -1,0 +1,57 @@
+name: FULL-AUTO-GITHUB-PERSISTENT
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+
+    - name: Enable RDP
+      run: |
+        net user runneradmin Pass@123 /add
+        net localgroup administrators runneradmin /add
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+    - name: Download Ngrok
+      run: |
+        Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-stable-windows-amd64.zip -OutFile ngrok.zip
+        Expand-Archive ngrok.zip
+
+    - name: Restore OLD USER DATA
+      uses: actions/download-artifact@v4
+      with:
+        name: user-backup
+        path: C:\restore
+      continue-on-error: true
+
+    - name: Restore to Profile
+      run: |
+        xcopy C:\restore C:\Users\runneradmin /E /H /C /I /Y
+
+    - name: Install Chrome + VSCode
+      run: |
+        choco install googlechrome -y
+        choco install vscode -y
+
+    - name: Create Backup Script
+      run: |
+        echo Compress-Archive -Path C:\Users\runneradmin -DestinationPath C:\backup.zip -Force > C:\backup.bat
+
+    - name: Schedule Backup every 10 min
+      run: |
+        schtasks /create /sc minute /mo 10 /tn AutoBackup /tr C:\backup.bat /ru SYSTEM
+
+    - name: Upload USER DATA
+      uses: actions/upload-artifact@v4
+      with:
+        name: user-backup
+        path: C:\backup.zip
+
+    - name: Start RDP
+      run: |
+        .\ngrok.exe tcp 3389
